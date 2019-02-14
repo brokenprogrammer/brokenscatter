@@ -1,20 +1,85 @@
 #include <Windows.h>
 #include <ShObjIdl.h>
 #include <wchar.h>
+#include <stdio.h>
+#include "stretchy_buffer.h"
+
+#define BufferSize 1024
 
 #define IDM_FILE_NEW 1
 #define IDM_FILE_OPEN 2
 #define IDM_FILE_QUIT 3
 
-void
+struct data
+{
+	float X;
+	float Y;
+	char Type[128];
+};
+
+struct CSVData
+{
+	data *Data; //NOTE: This is using stb stretchy buffer.
+};
+
+int
+CountCommas(char *String)
+{
+	int Count = 0;
+	while (*String++)
+	{
+		if (*String == ',')
+		{
+			++Count;
+		}
+	}
+	return (Count);
+}
+
+CSVData
 Win32LoadCSV(wchar_t *FilePath)
 {
 	//TODO: Validate that its a .csv file thats being loaded.
 
 	//TODO: Read CSV file into some structure
+	CSVData Result = {};
+	
+	FILE *File;
 
-	//TODO: Return that structure with all the points etc.
-	wprintf(FilePath);
+	_wfopen_s(&File, FilePath, L"r");
+	
+	char Buffer[BufferSize];
+
+	if (File != NULL)
+	{
+		// Check ammount of commas
+		fgets(Buffer, sizeof(Buffer), File);
+		int Values = CountCommas(Buffer) + 1;
+
+		fseek(File, 0, SEEK_SET);
+
+		// Read data untill end of file.
+		if (Values == 3)
+		{
+			data *Arr = NULL;
+			while (1)
+			{
+				data Data = {};
+
+				fscanf_s(File, "%f,%f,%s\n", &Data.X, &Data.Y, Data.Type, _countof(Data.Type));
+				if (ferror(File) || feof(File))
+				{
+					break;
+				}
+
+				sb_push(Arr, Data);
+			}
+
+			Result.Data = Arr;
+		}
+	}
+
+	return (Result);
 }
 
 void
@@ -103,7 +168,7 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 									// TODO: This should be a function call to load the file instead
 									if (SUCCEEDED(Result))
 									{
-										Win32LoadCSV(FilePath);
+										CSVData D = Win32LoadCSV(FilePath); //TODO: Now make this be displayed somehow in the applicaiton.
 										CoTaskMemFree(FilePath);
 									}
 

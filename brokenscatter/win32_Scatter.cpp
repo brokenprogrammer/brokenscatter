@@ -1,4 +1,39 @@
 #include <Windows.h>
+#include <ShObjIdl.h>
+#include <wchar.h>
+
+#define IDM_FILE_NEW 1
+#define IDM_FILE_OPEN 2
+#define IDM_FILE_QUIT 3
+
+void
+Win32LoadCSV(wchar_t *FilePath)
+{
+	//TODO: Validate that its a .csv file thats being loaded.
+
+	//TODO: Read CSV file into some structure
+
+	//TODO: Return that structure with all the points etc.
+	wprintf(FilePath);
+}
+
+void
+Win32CreateMenu(HWND Window)
+{
+	HMENU MenuBar;
+	HMENU Menu;
+
+	MenuBar = CreateMenu();
+	Menu = CreateMenu();
+
+	AppendMenuW(Menu, MF_STRING, IDM_FILE_NEW, L"&New");
+	AppendMenuW(Menu, MF_STRING, IDM_FILE_OPEN, L"&Open");
+	AppendMenuW(Menu, MF_SEPARATOR, 0, NULL);
+	AppendMenuW(Menu, MF_STRING, IDM_FILE_QUIT, L"&Quit");
+
+	AppendMenuW(MenuBar, MF_POPUP, (UINT_PTR)Menu, L"&File");
+	SetMenu(Window, MenuBar);
+}
 
 LRESULT CALLBACK
 Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
@@ -7,6 +42,11 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 
 	switch (Message)
 	{
+		case WM_CREATE:
+		{
+			Win32CreateMenu(Window);
+		} break;
+
 		case WM_SIZE:
 		{
 		} break;
@@ -24,6 +64,65 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 		case WM_DESTROY:
 		{
 			PostQuitMessage(0);
+		} break;
+
+		case WM_COMMAND:
+		{
+			switch (LOWORD(WParam))
+			{
+				case IDM_FILE_NEW:
+				{
+					//TODO: This menu should be removed.
+				}break;
+				case IDM_FILE_OPEN:
+				{
+					//TODO: Call function that loads csv etc.
+
+					HRESULT Result = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+					if (SUCCEEDED(Result))
+					{
+						IFileOpenDialog *OpenDialog;
+
+						Result = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, (LPVOID *)&OpenDialog);
+
+						if (SUCCEEDED(Result))
+						{
+
+							Result = OpenDialog->Show(NULL);
+
+							// Retrieve filename from the dialog box.
+							if (SUCCEEDED(Result))
+							{
+								IShellItem *Item;
+								Result = OpenDialog->GetResult(&Item);
+								if (SUCCEEDED(Result))
+								{
+									LPWSTR FilePath;
+									Result = Item->GetDisplayName(SIGDN_FILESYSPATH, &FilePath);
+
+									// TODO: This should be a function call to load the file instead
+									if (SUCCEEDED(Result))
+									{
+										Win32LoadCSV(FilePath);
+										CoTaskMemFree(FilePath);
+									}
+
+									Item->Release();
+								}
+							}
+
+							OpenDialog->Release();
+						}
+
+						CoUninitialize();
+					}
+
+				} break;
+				case IDM_FILE_QUIT:
+				{
+					SendMessage(Window, WM_CLOSE, 0, 0);
+				} break;
+			}
 		} break;
 
 		case WM_SYSKEYDOWN:

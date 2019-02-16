@@ -2,6 +2,8 @@
 #include <ShObjIdl.h>
 #include <wchar.h>
 #include <stdio.h>
+#include <float.h>
+#include <math.h>
 #include "stretchy_buffer.h"
 
 #define BufferSize 1024
@@ -9,6 +11,13 @@
 #define IDM_FILE_NEW 1
 #define IDM_FILE_OPEN 2
 #define IDM_FILE_QUIT 3
+
+
+struct coordinate
+{
+	float X;
+	float Y;
+};
 
 struct data
 {
@@ -20,7 +29,16 @@ struct data
 struct CSVData
 {
 	data *Data; //NOTE: This is using stb stretchy buffer.
+	char *Types[3]; //TODO: This is currently locked to 3 different values. Fix later.
+	float MaxX;
+	float MaxY;
+	float MinX;
+	float MinY;
 };
+
+//NOTE: Globals
+static CSVData GlobalCSVData;
+static COLORREF Colors[] = { RGB(255, 0, 0), RGB(0, 0, 255), RGB(0, 255, 0), RGB(255, 255, 0) };
 
 int
 CountCommas(char *String)
@@ -43,8 +61,13 @@ Win32LoadCSV(wchar_t *FilePath)
 
 	//TODO: Read CSV file into some structure
 	CSVData Result = {};
-	
+
+	Result.MaxX = FLT_MIN;
+	Result.MaxY = FLT_MIN;
+	Result.MinX = FLT_MAX;
+	Result.MinY = FLT_MAX;
 	FILE *File;
+	int Types = 0;
 
 	_wfopen_s(&File, FilePath, L"r");
 	
@@ -72,7 +95,44 @@ Win32LoadCSV(wchar_t *FilePath)
 					break;
 				}
 
-				sb_push(Arr, Data);
+				if (Data.X > Result.MaxX)
+				{
+					Result.MaxX = Data.X;
+				}
+				if (Data.X < Result.MinX)
+				{
+					Result.MinX = Data.X;
+				}
+				if (Data.Y > Result.MaxY)
+				{
+					Result.MaxY = Data.Y;
+				}
+				if (Data.Y < Result.MinY)
+				{
+					Result.MinY = Data.Y;
+				}
+
+				bool TypeFound = false;
+				for (int TypeIndex = 0; TypeIndex < 3; ++TypeIndex)
+				{
+					if (Result.Types[TypeIndex])
+					{
+						if (strcmp(Result.Types[TypeIndex], Data.Type) == 0)
+						{
+							TypeFound = true;
+							break;
+						}
+					}
+				}
+
+				if (!TypeFound)
+				{
+					Result.Types[Types] = (char *)malloc(strlen(Data.Type) + 1);
+					strcpy_s(Result.Types[Types], sizeof(Result.Types[Types]), Data.Type);
+					Types++;
+				}
+
+				stb_sb_push(Arr, Data);
 			}
 
 			Result.Data = Arr;
@@ -165,10 +225,10 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 									LPWSTR FilePath;
 									Result = Item->GetDisplayName(SIGDN_FILESYSPATH, &FilePath);
 
-									// TODO: This should be a function call to load the file instead
 									if (SUCCEEDED(Result))
 									{
-										CSVData D = Win32LoadCSV(FilePath); //TODO: Now make this be displayed somehow in the applicaiton.
+										//TODO: Free old stb allocated structures if they already exist.
+										GlobalCSVData = Win32LoadCSV(FilePath); //TODO: Now make this be displayed somehow in the applicaiton.
 										CoTaskMemFree(FilePath);
 									}
 
@@ -180,6 +240,9 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 						}
 
 						CoUninitialize();
+
+						// Redraw the window.
+						RedrawWindow(Window, NULL, NULL, RDW_INVALIDATE | RDW_INTERNALPAINT);
 					}
 
 				} break;
@@ -200,10 +263,79 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 		case WM_PAINT:
 		{
 			PAINTSTRUCT Paint;
+			RECT WindowRect;
 			HDC DeviceContext = BeginPaint(Window, &Paint);
+			GetClientRect(Window, &WindowRect);
 
 			//TODO: This is temp
 			FillRect(DeviceContext, &Paint.rcPaint, (HBRUSH)(COLOR_WINDOW + 25));
+			
+			RECT PlotRect = {};
+			PlotRect.top = 50;
+			PlotRect.left = 50;
+			PlotRect.right = Paint.rcPaint.right - 50;
+			PlotRect.bottom = Paint.rcPaint.bottom - 50;
+			
+			int ScreenWidth = PlotRect.right - PlotRect.left;
+			int ScreenHeight = PlotRect.bottom - PlotRect.top;
+
+			
+			Rectangle(DeviceContext, PlotRect.left, PlotRect.top, PlotRect.right, PlotRect.bottom);
+			if (GlobalCSVData.Data)
+			{
+				GlobalCSVData.MaxX = ceilf(GlobalCSVData.MaxX);
+				GlobalCSVData.MaxY = ceilf(GlobalCSVData.MaxY);
+
+				GlobalCSVData.MinX = floorf(GlobalCSVData.MinX);
+				GlobalCSVData.MinY = floorf(GlobalCSVData.MinY);
+
+				//TODO: Fix a better value perhaps based on the difference between Min and Max values.
+				if (GlobalCSVData.MaxX < 60.0f)
+				{
+					GlobalCSVData.MaxX = 100.0f;
+				}
+				if (GlobalCSVData.MaxY < 60.0f)
+				{
+					GlobalCSVData.MaxY = 100.0f;
+				}
+				if (GlobalCSVData.MinX < -50.0f)
+				{
+					GlobalCSVData.MinX = -100.0f;
+				}
+				if (GlobalCSVData.MinY < -50.0f)
+				{
+					GlobalCSVData.MinY = -100.0f;
+				}
+
+				for (int i = 0; i < stb_sb_count(GlobalCSVData.Data); ++i)
+				{
+					data Data = GlobalCSVData.Data[i];
+
+					float ScreenX = (Data.X - GlobalCSVData.MinX) / (GlobalCSVData.MaxX - GlobalCSVData.MinX)*ScreenWidth;
+					float ScreenY = ScreenHeight - (Data.Y - GlobalCSVData.MinY) / (GlobalCSVData.MaxY - GlobalCSVData.MinY)*ScreenHeight;
+
+					ScreenX += 50;
+					ScreenY += 50;
+
+					RECT R = {};
+					R.top = ScreenY - 5;
+					R.bottom = ScreenY + 5;
+					R.left = ScreenX - 5;
+					R.right = ScreenX + 5;
+
+					HBRUSH ColoredBrush = 0;
+
+					for (int TypeIndex = 0; TypeIndex < 3; ++TypeIndex)
+					{
+						if (strcmp(GlobalCSVData.Types[TypeIndex], Data.Type) == 0)
+						{
+							ColoredBrush = CreateSolidBrush(Colors[TypeIndex]);
+						}
+					}
+
+					FillRect(DeviceContext, &R, ColoredBrush);
+				}
+			}
 
 			EndPaint(Window, &Paint);
 		} break;
@@ -229,7 +361,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmpLine, int nCmdS
 
 	if (RegisterClassA(&WindowClass))
 	{
-		HWND Window = CreateWindowExA(0, WindowClass.lpszClassName, "BrokenScatter", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL,
+		HWND Window = CreateWindowExA(0, WindowClass.lpszClassName, "BrokenScatter", (WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME) | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL,
 									  NULL, // TODO: MENU
 									  hInstance, NULL);
 

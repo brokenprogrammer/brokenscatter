@@ -7,11 +7,14 @@
 #include "stretchy_buffer.h"
 
 #define BufferSize 1024
+#define NumberBufferSize 128
 
 #define IDM_FILE_NEW 1
 #define IDM_FILE_OPEN 2
 #define IDM_FILE_QUIT 3
 
+#define XAXISLINEPADDING 3
+#define LINESPACE 10
 
 struct coordinate
 {
@@ -52,6 +55,52 @@ CountCommas(char *String)
 		}
 	}
 	return (Count);
+}
+
+void
+DrawAxes(HDC DeviceContext, RECT PlotRectangle, CSVData data)
+{
+	int ScreenWidth = PlotRectangle.right - PlotRectangle.left;
+	int ScreenHeight = PlotRectangle.bottom - PlotRectangle.top;
+
+	HFONT Font = CreateFontW(15, 0, 0, 0, FW_MEDIUM, 0, 0, 0, 0, 0, 0, 0, 0, L"Georgia");
+	SelectObject(DeviceContext, Font);
+
+	wchar_t NumberBuffer[NumberBufferSize];
+	
+	// Y axis line.
+	MoveToEx(DeviceContext, PlotRectangle.left, PlotRectangle.bottom, NULL);
+	LineTo(DeviceContext, PlotRectangle.left, PlotRectangle.top);
+
+	// X axis line.
+	MoveToEx(DeviceContext, PlotRectangle.left, PlotRectangle.bottom, NULL);
+	LineTo(DeviceContext, PlotRectangle.right, PlotRectangle.bottom);
+
+	// Y axis numbers.
+	for (int x = PlotRectangle.bottom; x > PlotRectangle.top; x-= (PlotRectangle.bottom - PlotRectangle.top) / 10)
+	{
+		MoveToEx(DeviceContext, PlotRectangle.left - LINESPACE, x, NULL);
+		LineTo(DeviceContext, PlotRectangle.left + LINESPACE, x);
+
+		int ScreenY = (int)(GlobalCSVData.MinY + (GlobalCSVData.MaxY - GlobalCSVData.MinY) * (ScreenHeight - x)/ScreenHeight);
+		swprintf_s(NumberBuffer, L"%i", ScreenY);
+		TextOutW(DeviceContext, PlotRectangle.left - 30, x - 7, NumberBuffer, lstrlenW(NumberBuffer));
+	}
+
+	// X axis numbers.
+	for (int x = 0; x < PlotRectangle.right; x += (PlotRectangle.right - PlotRectangle.left) / 10)
+	{
+		MoveToEx(DeviceContext, x + PlotRectangle.left, PlotRectangle.bottom - LINESPACE, NULL);
+		LineTo(DeviceContext, x + PlotRectangle.left, PlotRectangle.bottom + LINESPACE);
+
+		// Line number
+		//int ScreenX = (int)((x - GlobalCSVData.MinX) / (GlobalCSVData.MaxX - GlobalCSVData.MinX)*ScreenWidth);
+		int ScreenX = (int)(GlobalCSVData.MinX + (GlobalCSVData.MaxX - GlobalCSVData.MinX) * x / ScreenWidth);
+		
+		swprintf_s(NumberBuffer, L"%i", ScreenX);
+		TextOutW(DeviceContext, x-10 + PlotRectangle.left, PlotRectangle.bottom + 20, NumberBuffer, lstrlenW(NumberBuffer));
+	}
+
 }
 
 CSVData
@@ -268,7 +317,7 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 			GetClientRect(Window, &WindowRect);
 
 			//TODO: This is temp
-			FillRect(DeviceContext, &Paint.rcPaint, (HBRUSH)(COLOR_WINDOW + 25));
+			FillRect(DeviceContext, &Paint.rcPaint, (HBRUSH)(COLOR_WINDOW));
 			
 			RECT PlotRect = {};
 			PlotRect.top = 50;
@@ -280,9 +329,10 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 			int ScreenHeight = PlotRect.bottom - PlotRect.top;
 
 			
-			Rectangle(DeviceContext, PlotRect.left, PlotRect.top, PlotRect.right, PlotRect.bottom);
+			//Rectangle(DeviceContext, PlotRect.left, PlotRect.top, PlotRect.right, PlotRect.bottom);
 			if (GlobalCSVData.Data)
 			{
+
 				GlobalCSVData.MaxX = ceilf(GlobalCSVData.MaxX);
 				GlobalCSVData.MaxY = ceilf(GlobalCSVData.MaxY);
 
@@ -307,6 +357,9 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 					GlobalCSVData.MinY = -100.0f;
 				}
 
+				// Draw the axes
+				DrawAxes(DeviceContext, PlotRect, GlobalCSVData);
+
 				for (int i = 0; i < stb_sb_count(GlobalCSVData.Data); ++i)
 				{
 					data Data = GlobalCSVData.Data[i];
@@ -330,6 +383,7 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 						if (strcmp(GlobalCSVData.Types[TypeIndex], Data.Type) == 0)
 						{
 							ColoredBrush = CreateSolidBrush(Colors[TypeIndex]);
+							break;
 						}
 					}
 

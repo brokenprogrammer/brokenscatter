@@ -6,6 +6,28 @@
 #include <math.h>
 #include "stretchy_buffer.h"
 
+/*
+	Notes:
+	Currently the application is functional enough to run the data sets provided in the assignment but there are some problems.
+	With this software that I'll have to take my time and fix on a later date.
+
+	The most important ones are that currently the values for the x and y axis are really janky when they are normalized. It is basically
+	made so that it will work for the two data sets provided in the assignment which is really trash and needs to be fixed asap.
+
+	The code is using a lot of "magic values" this is because everything had to be set in pixels and due to my time limit I couldn't invenstigate a better solution
+	in time.
+
+	There can currently only be 3 data types within the loaded CSV data. This is because I messed up when I was for no reason trying to convert normal char pointers to 
+	wide char pointers. I don't know how I ended up even attempting that instead of just using normal char pointers. Might have been intellisense that recommended me a wide function
+	and then I just thought it expected wide strings as paramenter. Its stupid non the less. 
+
+	There is currently no validation that an actual CSV file is being opened which also has to be done.
+
+	Rest of things to fix is marked as TODOs within the code.
+
+	- Oskar Mendel
+*/
+
 #define BufferSize 1024
 #define NumberBufferSize 128
 
@@ -58,7 +80,7 @@ CountCommas(char *String)
 }
 
 void
-DrawAxes(HDC DeviceContext, RECT PlotRectangle, CSVData data)
+DrawAxesAndLegend(HWND Window, HDC DeviceContext, RECT PlotRectangle, CSVData Data)
 {
 	int ScreenWidth = PlotRectangle.right - PlotRectangle.left;
 	int ScreenHeight = PlotRectangle.bottom - PlotRectangle.top;
@@ -94,13 +116,32 @@ DrawAxes(HDC DeviceContext, RECT PlotRectangle, CSVData data)
 		LineTo(DeviceContext, x + PlotRectangle.left, PlotRectangle.bottom + LINESPACE);
 
 		// Line number
-		//int ScreenX = (int)((x - GlobalCSVData.MinX) / (GlobalCSVData.MaxX - GlobalCSVData.MinX)*ScreenWidth);
 		int ScreenX = (int)(GlobalCSVData.MinX + (GlobalCSVData.MaxX - GlobalCSVData.MinX) * x / ScreenWidth);
 		
 		swprintf_s(NumberBuffer, L"%i", ScreenX);
 		TextOutW(DeviceContext, x-10 + PlotRectangle.left, PlotRectangle.bottom + 20, NumberBuffer, lstrlenW(NumberBuffer));
 	}
 
+	// Draw Legend
+	RECT WindowRect;
+	GetClientRect(Window, &WindowRect);
+
+	for (int DataType = 0; DataType < 3; ++DataType)
+	{
+		char *String = GlobalCSVData.Types[DataType];
+		TextOutA(DeviceContext, WindowRect.left+(40 * DataType), WindowRect.bottom-15, GlobalCSVData.Types[DataType], lstrlenA(GlobalCSVData.Types[DataType]));
+
+		// Select color based on type
+		HBRUSH ColoredBrush = CreateSolidBrush(Colors[DataType]);
+
+		RECT Rectangle = {};
+		Rectangle.top = (WindowRect.bottom - 10) - 5;
+		Rectangle.bottom = (WindowRect.bottom - 10) + 5;
+		Rectangle.left = (WindowRect.left + (40 * DataType) + 27) - 5;
+		Rectangle.right = (WindowRect.left + (40 * DataType)+ 27) + 5;
+
+		FillRect(DeviceContext, &Rectangle, ColoredBrush);
+	}
 }
 
 CSVData
@@ -358,7 +399,7 @@ Win32MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 				}
 
 				// Draw the axes
-				DrawAxes(DeviceContext, PlotRect, GlobalCSVData);
+				DrawAxesAndLegend(Window, DeviceContext, PlotRect, GlobalCSVData);
 
 				for (int i = 0; i < stb_sb_count(GlobalCSVData.Data); ++i)
 				{
